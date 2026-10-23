@@ -1051,6 +1051,105 @@ extern "C" {
 		}
 	}
 
+	int get_fds_disk_in_drive(std::shared_ptr<FdsSystemActionManager> &fdsSam)
+	{
+		FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+		if(fds && fds->IsDiskInserted() && !fdsSam->IsDiskSwapPending()) {
+			return fds->GetCurrentDisk();
+		}
+		return -1;
+	}
+
+	//A queued eject does not refuse calls, as frontends set the index right after ejecting
+	bool RETRO_CALLCONV fds_set_eject_state(bool ejected)
+	{
+		std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
+		if(!fdsSam || fdsSam->GetPendingInsertDisk() >= 0) {
+			return false;
+		}
+
+		int diskInDrive = get_fds_disk_in_drive(fdsSam);
+		int selectedDisk = fdsSam->GetSelectedDisk();
+		if(ejected && diskInDrive >= 0) {
+			fdsSam->SetSelectedDisk(diskInDrive);
+			fdsSam->EjectDisk();
+		} else if(!ejected && diskInDrive < 0 && selectedDisk >= 0) {
+			fdsSam->InsertDisk(selectedDisk);
+			_keyManager->StartSwapProgress(fdsSam);
+		}
+		return true;
+	}
+
+	//Closed once an insert is pending: the reinsert takes frames a paused frontend menu never runs
+	bool RETRO_CALLCONV fds_get_eject_state()
+	{
+		std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
+		return !fdsSam || (fdsSam->GetPendingInsertDisk() < 0 && get_fds_disk_in_drive(fdsSam) < 0);
+	}
+
+	unsigned RETRO_CALLCONV fds_get_image_index()
+	{
+		std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
+		if(!fdsSam) {
+			return 0;
+		}
+
+		int disk = fdsSam->GetPendingInsertDisk();
+		if(disk < 0) {
+			disk = get_fds_disk_in_drive(fdsSam);
+		}
+		if(disk < 0) {
+			disk = fdsSam->GetSelectedDisk();
+		}
+		return disk >= 0 ? (unsigned)disk : fdsSam->GetSideCount();
+	}
+
+	bool RETRO_CALLCONV fds_set_image_index(unsigned index)
+	{
+		std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
+		if(!fdsSam || fdsSam->GetPendingInsertDisk() >= 0 || get_fds_disk_in_drive(fdsSam) >= 0) {
+			return false;
+		}
+
+		fdsSam->SetSelectedDisk(index < fdsSam->GetSideCount() ? (int)index : -1);
+		return true;
+	}
+
+	unsigned RETRO_CALLCONV fds_get_num_images()
+	{
+		std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
+		return fdsSam ? fdsSam->GetSideCount() : 0;
+	}
+
+	bool RETRO_CALLCONV fds_get_image_label(unsigned index, char *label, size_t len)
+	{
+		if(index >= fds_get_num_images() || !label || len == 0) {
+			return false;
+		}
+		snprintf(label, len, "%s", LibretroKeyManager::GetFdsDiskName(index).c_str());
+		return true;
+	}
+
+	void set_fds_disk_control()
+	{
+		//No add/replace (frontends would offer an append that always fails) and no image path or initial image (FDS games boot from Disk 1 Side A)
+		static retro_disk_control_ext_callback diskControlExt = {
+			fds_set_eject_state, fds_get_eject_state, fds_get_image_index, fds_set_image_index, fds_get_num_images,
+			nullptr, nullptr, nullptr, nullptr, fds_get_image_label
+		};
+		static retro_disk_control_callback diskControl = {
+			fds_set_eject_state, fds_get_eject_state, fds_get_image_index, fds_set_image_index, fds_get_num_images,
+			nullptr, nullptr
+		};
+
+		unsigned version = 0;
+		if(env_cb(RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION, &version) && version >= 1) {
+			env_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, &diskControlExt);
+		} else {
+			env_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, &diskControl);
+		}
+	}
+
 	RETRO_API bool retro_load_game(const struct retro_game_info *game)
 	{
 		char *saveFolder;
@@ -1143,6 +1242,10 @@ extern "C" {
 			//Round up to the next 1kb multiple
 			_saveStateSize = ((ss.str().size() * 2) + 0x400) & ~0x3FF;
 			retro_set_memory_maps();
+
+			if(_console->GetSystemActionManager<FdsSystemActionManager>()) {
+				set_fds_disk_control();
+			}
 		}
 
 		return result;

@@ -54,17 +54,6 @@ private:
 		return false;
 	}
 
-	void StartSwapProgress(std::shared_ptr<FdsSystemActionManager> &fdsSam)
-	{
-		int disk = fdsSam->GetPendingInsertDisk();
-		if(disk >= 0) {
-			_announceSwap = true;
-			_progressDisk = disk;
-			_progressStep = 0;
-			_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), 0, SwapProgressDuration, false);
-		}
-	}
-
 	void UpdateSwapProgress(std::shared_ptr<FdsSystemActionManager> &fdsSam)
 	{
 		uint32_t frame = _console->GetFrameCount();
@@ -135,6 +124,17 @@ public:
 		_messageManager = messageManager;
 	}
 
+	void StartSwapProgress(std::shared_ptr<FdsSystemActionManager> &fdsSam)
+	{
+		int disk = fdsSam->GetPendingInsertDisk();
+		if(disk >= 0) {
+			_announceSwap = true;
+			_progressDisk = disk;
+			_progressStep = fdsSam->GetInsertFramesElapsed() / SwapProgressInterval;
+			_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), 0, SwapProgressDuration, false);
+		}
+	}
+
 	static string GetFdsDiskName(uint32_t disk)
 	{
 		return "Disk " + std::to_string(disk / 2 + 1) + ((disk & 1) ? " Side B" : " Side A");
@@ -190,6 +190,11 @@ public:
 						fdsSam->SwitchDiskSide();
 						StartSwapProgress(fdsSam);
 					}
+				}
+
+				FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+				if(fds && fds->IsDiskInserted() && !fdsSam->IsDiskSwapPending()) {
+					fdsSam->SetSelectedDisk(fds->GetCurrentDisk());
 				}
 
 				_swapPending = fdsSam->IsDiskSwapPending();

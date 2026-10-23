@@ -168,7 +168,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "mesen_fdsdiskmessages",
       "FDS: Disk change messages",
       NULL,
-      "Which disk changes are announced on screen. 'Disk buttons only' announces swaps made with the Insert Next Disk and Switch Disk Side buttons. 'Verbose' also announces the disk inserted at boot and swaps that finish after loading a state.",
+      "Which disk changes are announced on screen. 'Disk buttons only' announces swaps made with the Insert Next Disk and Switch Disk Side buttons or the frontend's disk control (Disc Control menu, Next Disc hotkey). 'Verbose' also announces the disk inserted at boot and swaps that finish after loading a state.",
       NULL,
       "system",
       {
