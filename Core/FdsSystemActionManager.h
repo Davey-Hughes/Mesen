@@ -121,6 +121,21 @@ public:
 		return _needEjectDisk || _insertDiskDelay > 0;
 	}
 
+	int GetPendingInsertDisk()
+	{
+		return _insertDiskDelay > 0 ? _insertDiskNumber : -1;
+	}
+
+	int GetInsertFramesElapsed()
+	{
+		return ReinsertDiskFrameDelay - _insertDiskDelay;
+	}
+
+	int GetInsertProgress()
+	{
+		return GetInsertFramesElapsed() * 100 / ReinsertDiskFrameDelay;
+	}
+
 	uint32_t GetSideCount()
 	{
 		std::shared_ptr<FDS> mapper = _mapper.lock();

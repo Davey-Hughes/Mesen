@@ -1,5 +1,6 @@
 #pragma once
 #include "libretro.h"
+#include "LibretroMessageManager.h"
 #include "../Core/IKeyManager.h"
 #include "../Core/KeyManager.h"
 #include "../Core/FdsSystemActionManager.h"
@@ -16,15 +17,22 @@ private:
 	bool _mouseButtons[3] = { false, false, false };
 	bool _supportsInputBitmasks = false;
 	bool _wasPushed[16] = { };
+	LibretroMessageManager* _messageManager = nullptr;
 	//The boot disk goes in while loading, which RetroArch does before setting the input callbacks, so start as if it was pending
 	bool _swapPending = true;
 	bool _announceSwap = false;
 	bool _verboseDiskMessages = false;
 	uint32_t _swapEndFrame = 0;
 	uint32_t _highestFrame = 0;
+	int _progressDisk = -1;
+	int _progressStep = 0;
 
 	//Run-ahead goes back at most 12 frames; 16 or more back is a state load or rewind
 	static constexpr uint32_t LoadJumpFrames = 16;
+	static constexpr const char* AutoInsertHint = "Disks are inserted automatically (FDS auto insert is on)";
+	//Frontends without progress widgets queue every core message, so updates are spaced out and each lasts no longer than the interval
+	static constexpr int SwapProgressInterval = 15; //frames
+	static constexpr unsigned SwapProgressDuration = 250; //ms
 
 	bool ProcessAction(uint32_t button)
 	{
@@ -46,13 +54,48 @@ private:
 		return false;
 	}
 
-	void ReportDiskChange()
+	void StartSwapProgress(std::shared_ptr<FdsSystemActionManager> &fdsSam)
 	{
-		FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
-		if(fds && fds->IsDiskInserted()) {
-			const uint32_t disk = fds->GetCurrentDisk();
-			MessageManager::DisplayMessage("FDS", "Inserted disk " + std::to_string((disk / 2) + 1) + ((disk & 1) ? " Side B" : " Side A"));
+		int disk = fdsSam->GetPendingInsertDisk();
+		if(disk >= 0) {
+			_announceSwap = true;
+			_progressDisk = disk;
+			_progressStep = 0;
+			_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), 0, SwapProgressDuration, false);
 		}
+	}
+
+	void UpdateSwapProgress(std::shared_ptr<FdsSystemActionManager> &fdsSam)
+	{
+		uint32_t frame = _console->GetFrameCount();
+		if(frame < _highestFrame && _highestFrame - frame >= LoadJumpFrames) {
+			_swapEndFrame = 0;
+			_highestFrame = 0;
+		}
+		_highestFrame = std::max(_highestFrame, frame);
+
+		int disk = fdsSam->GetPendingInsertDisk();
+		if(_announceSwap && disk >= 0) {
+			//A new target, or two or more steps back (LoadJumpFrames or more), is a state load or rewind
+			int step = fdsSam->GetInsertFramesElapsed() / SwapProgressInterval;
+			if(step > _progressStep || step <= _progressStep - 2 || disk != _progressDisk) {
+				_progressDisk = disk;
+				_progressStep = step;
+				_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), fdsSam->GetInsertProgress(), SwapProgressDuration, true);
+			}
+		} else if(_swapPending && !fdsSam->IsDiskSwapPending()) {
+			FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+			if((_announceSwap || (_verboseDiskMessages && frame > _swapEndFrame)) && fds && fds->IsDiskInserted()) {
+				_messageManager->DisplayProgressMessage(GetFdsDiskName(fds->GetCurrentDisk()) + " inserted", 100, 1000, false);
+			}
+			_swapEndFrame = std::max(_swapEndFrame, frame);
+			_announceSwap = false;
+		}
+	}
+
+	void DisplayHint(const char* message)
+	{
+		_messageManager->DisplayProgressMessage(message, -1, 2000, false);
 	}
 
 public:
@@ -87,6 +130,16 @@ public:
 		_verboseDiskMessages = verbose;
 	}
 
+	void SetMessageManager(LibretroMessageManager* messageManager)
+	{
+		_messageManager = messageManager;
+	}
+
+	static string GetFdsDiskName(uint32_t disk)
+	{
+		return "Disk " + std::to_string(disk / 2 + 1) + ((disk & 1) ? " Side B" : " Side A");
+	}
+
 	// Inherited via IKeyManager
 	virtual void RefreshState() override
 	{
@@ -117,37 +170,25 @@ public:
 
 			std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
 			if(fdsSam) {
-				//Run-ahead replays frames, so Verbose announces each swap end once
-				uint32_t frame = _console->GetFrameCount();
-				if(frame < _highestFrame && _highestFrame - frame >= LoadJumpFrames) {
-					_swapEndFrame = 0;
-					_highestFrame = 0;
-				}
-				_highestFrame = std::max(_highestFrame, frame);
-
-				if(_swapPending && !fdsSam->IsDiskSwapPending()) {
-					if(_announceSwap || (_verboseDiskMessages && frame > _swapEndFrame)) {
-						ReportDiskChange();
-					}
-					_swapEndFrame = std::max(_swapEndFrame, frame);
-					_announceSwap = false;
-				}
+				UpdateSwapProgress(fdsSam);
 
 				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_L) && !fdsSam->IsDiskSwapPending()) {
-					if(fdsSam->GetSideCount() > 2) { // ignore if multiple disks are not available
+					if(fdsSam->IsAutoInsertDiskEnabled()) {
+						DisplayHint(AutoInsertHint);
+					} else if(fdsSam->GetSideCount() > 2) {
 						fdsSam->InsertNextDisk();
-						if(fdsSam->IsDiskSwapPending()) {
-							_announceSwap = true;
-							MessageManager::DisplayMessage("FDS", "Ejected disk");
-						}
+						StartSwapProgress(fdsSam);
+					} else {
+						DisplayHint("Only one disk: use Switch Disk Side");
 					}
 				}
 				
 				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_R) && !fdsSam->IsDiskSwapPending()) {
-					fdsSam->SwitchDiskSide();
-					if(fdsSam->IsDiskSwapPending()) {
-						_announceSwap = true;
-						MessageManager::DisplayMessage("FDS", "Ejected disk");
+					if(fdsSam->IsAutoInsertDiskEnabled()) {
+						DisplayHint(AutoInsertHint);
+					} else {
+						fdsSam->SwitchDiskSide();
+						StartSwapProgress(fdsSam);
 					}
 				}
 
