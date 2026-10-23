@@ -116,6 +116,11 @@ public:
 		}
 	}
 
+	bool IsDiskSwapPending()
+	{
+		return _needEjectDisk || _insertDiskDelay > 0;
+	}
+
 	uint32_t GetSideCount()
 	{
 		std::shared_ptr<FDS> mapper = _mapper.lock();

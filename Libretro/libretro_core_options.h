@@ -165,6 +165,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
+      "mesen_fdsdiskmessages",
+      "FDS: Disk change messages",
+      NULL,
+      "Which disk changes are announced on screen. 'Disk buttons only' announces swaps made with the Insert Next Disk and Switch Disk Side buttons. 'Verbose' also announces the disk inserted at boot and swaps that finish after loading a state.",
+      NULL,
+      "system",
+      {
+         { "Disk buttons only", NULL },
+         { "Verbose",           NULL },
+         { NULL, NULL },
+      },
+      "Disk buttons only"
+   },
+   {
       "mesen_ntsc_filter",
       "NTSC filter",
       NULL,

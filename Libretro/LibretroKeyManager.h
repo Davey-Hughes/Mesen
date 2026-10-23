@@ -16,7 +16,10 @@ private:
 	bool _mouseButtons[3] = { false, false, false };
 	bool _supportsInputBitmasks = false;
 	bool _wasPushed[16] = { };
-	uint32_t _currentDisk = 0;
+	//The boot disk goes in while loading, which RetroArch does before setting the input callbacks, so start as if it was pending
+	bool _swapPending = true;
+	bool _announceSwap = false;
+	bool _verboseDiskMessages = false;
 
 	bool ProcessAction(uint32_t button)
 	{
@@ -40,15 +43,10 @@ private:
 
 	void ReportDiskChange()
 	{
-		if (_currentDisk & 0x100) {
-			FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
-			if(fds) {
-				const uint32_t disk = fds->GetCurrentDisk();
-				if(disk != 0xFF && disk != (_currentDisk & 0xFF)) {
-					_currentDisk = disk;
-					MessageManager::DisplayMessage("FDS", "Inserted disk " + std::to_string((disk / 2) + 1) + ((disk & 1) ? " Side B" : " Side A"));
-				}
-			}
+		FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+		if(fds && fds->IsDiskInserted()) {
+			const uint32_t disk = fds->GetCurrentDisk();
+			MessageManager::DisplayMessage("FDS", "Inserted disk " + std::to_string((disk / 2) + 1) + ((disk & 1) ? " Side B" : " Side A"));
 		}
 	}
 
@@ -77,6 +75,11 @@ public:
 	void SetSupportsInputBitmasks(bool supportsInputBitmasks)
 	{
 		_supportsInputBitmasks = supportsInputBitmasks;
+	}
+
+	void SetVerboseDiskMessages(bool verbose)
+	{
+		_verboseDiskMessages = verbose;
 	}
 
 	// Inherited via IKeyManager
@@ -109,33 +112,32 @@ public:
 
 			std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
 			if(fdsSam) {
-				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_L)) {
-					if(!(_currentDisk & 0x100)) { // ignore until previous disk switch completes
-						if(fdsSam->GetSideCount() > 2) { // ignore if multiple disks are not available
+				if(_swapPending && !fdsSam->IsDiskSwapPending()) {
+					if(_announceSwap || _verboseDiskMessages) {
+						ReportDiskChange();
+					}
+					_announceSwap = false;
+				}
+
+				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_L) && !fdsSam->IsDiskSwapPending()) {
+					if(fdsSam->GetSideCount() > 2) { // ignore if multiple disks are not available
+						fdsSam->InsertNextDisk();
+						if(fdsSam->IsDiskSwapPending()) {
+							_announceSwap = true;
 							MessageManager::DisplayMessage("FDS", "Ejected disk");
-							FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
-							if(fds)
-								_currentDisk = fds->GetCurrentDisk() | 0x100;
-							else
-								_currentDisk |= 0x100;
-							fdsSam->InsertNextDisk();
 						}
 					}
 				}
 				
-				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_R)) {
-					if (!(_currentDisk & 0x100)) { // ignore until previous disk switch completes
+				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_R) && !fdsSam->IsDiskSwapPending()) {
+					fdsSam->SwitchDiskSide();
+					if(fdsSam->IsDiskSwapPending()) {
+						_announceSwap = true;
 						MessageManager::DisplayMessage("FDS", "Ejected disk");
-						FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
-						if(fds)
-							_currentDisk = fds->GetCurrentDisk() | 0x100;
-						else
-							_currentDisk |= 0x100;
-						fdsSam->SwitchDiskSide();
 					}
 				}
 
-				ReportDiskChange();
+				_swapPending = fdsSam->IsDiskSwapPending();
 			}
 			
 			std::shared_ptr<VsSystemActionManager> vsSam = _console->GetSystemActionManager<VsSystemActionManager>();
