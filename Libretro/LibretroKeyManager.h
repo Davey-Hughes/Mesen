@@ -172,11 +172,20 @@ public:
 			if(fdsSam) {
 				UpdateSwapProgress(fdsSam);
 
+				FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+				//With the drive empty, L/R act on the last disk in (or the one disk control selected)
+				int selectedDisk = fdsSam->GetSelectedDisk();
+				bool useSelectedDisk = fds && !fds->IsDiskInserted() && selectedDisk >= 0;
+
 				if(ProcessAction(RETRO_DEVICE_ID_JOYPAD_L) && !fdsSam->IsDiskSwapPending()) {
 					if(fdsSam->IsAutoInsertDiskEnabled()) {
 						DisplayHint(AutoInsertHint);
 					} else if(fdsSam->GetSideCount() > 2) {
-						fdsSam->InsertNextDisk();
+						if(useSelectedDisk) {
+							fdsSam->InsertDisk(((selectedDisk & 0xFE) + 2) % fdsSam->GetSideCount());
+						} else {
+							fdsSam->InsertNextDisk();
+						}
 						StartSwapProgress(fdsSam);
 					} else {
 						DisplayHint("Only one disk: use Switch Disk Side");
@@ -187,12 +196,15 @@ public:
 					if(fdsSam->IsAutoInsertDiskEnabled()) {
 						DisplayHint(AutoInsertHint);
 					} else {
-						fdsSam->SwitchDiskSide();
+						if(useSelectedDisk) {
+							fdsSam->InsertDisk((selectedDisk ^ 0x01) % fdsSam->GetSideCount());
+						} else {
+							fdsSam->SwitchDiskSide();
+						}
 						StartSwapProgress(fdsSam);
 					}
 				}
 
-				FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
 				if(fds && fds->IsDiskInserted() && !fdsSam->IsDiskSwapPending()) {
 					fdsSam->SetSelectedDisk(fds->GetCurrentDisk());
 				}

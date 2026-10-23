@@ -15,7 +15,7 @@ private:
 	bool _needEjectDisk = false;
 	uint8_t _insertDiskNumber = 0;
 	uint8_t _insertDiskDelay = 0;
-	int32_t _selectedDisk = 0; //disk control's side for the next insert, -1 for none
+	int32_t _selectedDisk = 0; //disk control's side for the next insert, -1 for none; L/R's base disk with the drive empty
 	uint32_t _sideCount;
 
 	//A state saved without the selection takes the side in the drive, read once the mapper is loaded and before a pending eject empties it
