@@ -20,6 +20,11 @@ private:
 	bool _swapPending = true;
 	bool _announceSwap = false;
 	bool _verboseDiskMessages = false;
+	uint32_t _swapEndFrame = 0;
+	uint32_t _highestFrame = 0;
+
+	//Run-ahead goes back at most 12 frames; 16 or more back is a state load or rewind
+	static constexpr uint32_t LoadJumpFrames = 16;
 
 	bool ProcessAction(uint32_t button)
 	{
@@ -112,10 +117,19 @@ public:
 
 			std::shared_ptr<FdsSystemActionManager> fdsSam = _console->GetSystemActionManager<FdsSystemActionManager>();
 			if(fdsSam) {
+				//Run-ahead replays frames, so Verbose announces each swap end once
+				uint32_t frame = _console->GetFrameCount();
+				if(frame < _highestFrame && _highestFrame - frame >= LoadJumpFrames) {
+					_swapEndFrame = 0;
+					_highestFrame = 0;
+				}
+				_highestFrame = std::max(_highestFrame, frame);
+
 				if(_swapPending && !fdsSam->IsDiskSwapPending()) {
-					if(_announceSwap || _verboseDiskMessages) {
+					if(_announceSwap || (_verboseDiskMessages && frame > _swapEndFrame)) {
 						ReportDiskChange();
 					}
+					_swapEndFrame = std::max(_swapEndFrame, frame);
 					_announceSwap = false;
 				}
 
