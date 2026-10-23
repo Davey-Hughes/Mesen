@@ -113,7 +113,11 @@ public:
 					if(!(_currentDisk & 0x100)) { // ignore until previous disk switch completes
 						if(fdsSam->GetSideCount() > 2) { // ignore if multiple disks are not available
 							MessageManager::DisplayMessage("FDS", "Ejected disk");
-							_currentDisk |= 0x100;
+							FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+							if(fds)
+								_currentDisk = fds->GetCurrentDisk() | 0x100;
+							else
+								_currentDisk |= 0x100;
 							fdsSam->InsertNextDisk();
 						}
 					}
