@@ -165,6 +165,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
+      "mesen_fdsdiskmessagestyle",
+      "FDS: Disk change message style",
+      NULL,
+      "How disk changes are shown. 'Progress bar' shows a bar that fills over the two-second swap. 'Text only' shows the text alone: 'Ejecting' the side that comes out, then 'Inserting' the side that goes in.",
+      NULL,
+      "system",
+      {
+         { "Progress bar", NULL },
+         { "Text only",    NULL },
+         { NULL, NULL },
+      },
+      "Progress bar"
+   },
+   {
       "mesen_fdsdiskmessages",
       "FDS: Disk change messages",
       NULL,

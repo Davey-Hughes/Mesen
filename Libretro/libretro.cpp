@@ -73,6 +73,7 @@ static constexpr const char* MesenControllerTurboSpeed = "mesen_controllerturbos
 static constexpr const char* MesenFdsAutoSelectDisk = "mesen_fdsautoinsertdisk";
 static constexpr const char* MesenFdsFastForwardLoad = "mesen_fdsfastforwardload";
 static constexpr const char* MesenFdsDiskMessages = "mesen_fdsdiskmessages";
+static constexpr const char* MesenFdsDiskMessageStyle = "mesen_fdsdiskmessagestyle";
 static constexpr const char* MesenHdPacks = "mesen_hdpacks";
 static constexpr const char* MesenScreenRotation = "mesen_screenrotation";
 static constexpr const char* MesenFakeStereo = "mesen_fake_stereo";
@@ -345,6 +346,12 @@ extern "C" {
 			verboseDiskMessages = string(var.value) == "Verbose";
 		}
 		_keyManager->SetVerboseDiskMessages(verboseDiskMessages);
+
+		bool textOnlyDiskMessages = false;
+		if(readVariable(MesenFdsDiskMessageStyle, var)) {
+			textOnlyDiskMessages = string(var.value) == "Text only";
+		}
+		_keyManager->SetTextOnlyDiskMessages(textOnlyDiskMessages);
 
 		if(readVariable(MesenFakeStereo, var)) {
 			string value = string(var.value);

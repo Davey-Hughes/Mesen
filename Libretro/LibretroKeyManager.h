@@ -22,10 +22,12 @@ private:
 	bool _swapPending = true;
 	bool _announceSwap = false;
 	bool _verboseDiskMessages = false;
+	bool _textOnlyDiskMessages = false;
 	uint32_t _swapEndFrame = 0;
 	uint32_t _highestFrame = 0;
 	int _progressDisk = -1;
 	int _progressStep = 0;
+	int _ejectingDisk = -1;
 
 	//Run-ahead goes back at most 12 frames; 16 or more back is a state load or rewind
 	static constexpr uint32_t LoadJumpFrames = 16;
@@ -33,6 +35,8 @@ private:
 	//Frontends without progress widgets queue every core message, so updates are spaced out and each lasts no longer than the interval
 	static constexpr int SwapProgressInterval = 15; //frames
 	static constexpr unsigned SwapProgressDuration = 250; //ms
+	//Text only shows "Ejecting" for the first steps of a swap
+	static constexpr int EjectingSteps = 2;
 
 	bool ProcessAction(uint32_t button)
 	{
@@ -67,24 +71,51 @@ private:
 		if(_announceSwap && disk >= 0) {
 			//A new target, or two or more steps back (LoadJumpFrames or more), is a state load or rewind
 			int step = fdsSam->GetInsertFramesElapsed() / SwapProgressInterval;
-			if(step > _progressStep || step <= _progressStep - 2 || disk != _progressDisk) {
+			bool jumped = step <= _progressStep - 2 || disk != _progressDisk;
+			if(step > _progressStep || jumped) {
+				bool ejectingEnds = _ejectingDisk >= 0 && step >= EjectingSteps;
 				_progressDisk = disk;
 				_progressStep = step;
-				_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), fdsSam->GetInsertProgress(), SwapProgressDuration, true);
+				if(!_textOnlyDiskMessages) {
+					_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), fdsSam->GetInsertProgress(), SwapProgressDuration, true);
+				} else if(jumped || ejectingEnds) {
+					//After "Ejecting", or straight after a load: a state does not record the side that came out
+					_ejectingDisk = -1;
+					DisplayInsertingText(fdsSam, disk);
+				}
 			}
 		} else if(_swapPending && !fdsSam->IsDiskSwapPending()) {
 			FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
 			if((_announceSwap || (_verboseDiskMessages && frame > _swapEndFrame)) && fds && fds->IsDiskInserted()) {
-				_messageManager->DisplayProgressMessage(GetFdsDiskName(fds->GetCurrentDisk()) + " inserted", 100, 1000, false);
+				string message = GetFdsDiskName(fds->GetCurrentDisk()) + " inserted";
+				if(_textOnlyDiskMessages) {
+					_messageManager->DisplayTextMessage(message, 1000);
+				} else {
+					_messageManager->DisplayProgressMessage(message, 100, 1000, false);
+				}
 			}
 			_swapEndFrame = std::max(_swapEndFrame, frame);
 			_announceSwap = false;
+			_ejectingDisk = -1;
 		}
+	}
+
+	void DisplayInsertingText(std::shared_ptr<FdsSystemActionManager> &fdsSam, int disk)
+	{
+		unsigned duration = fdsSam->GetInsertFramesLeft() * 1000 / 60;
+		if(duration < SwapProgressDuration) {
+			duration = SwapProgressDuration;
+		}
+		_messageManager->DisplayTextMessage("Inserting " + GetFdsDiskName(disk), duration);
 	}
 
 	void DisplayHint(const char* message)
 	{
-		_messageManager->DisplayProgressMessage(message, -1, 2000, false);
+		if(_textOnlyDiskMessages) {
+			_messageManager->DisplayTextMessage(message, 2000);
+		} else {
+			_messageManager->DisplayProgressMessage(message, -1, 2000, false);
+		}
 	}
 
 public:
@@ -119,6 +150,11 @@ public:
 		_verboseDiskMessages = verbose;
 	}
 
+	void SetTextOnlyDiskMessages(bool textOnly)
+	{
+		_textOnlyDiskMessages = textOnly;
+	}
+
 	void SetMessageManager(LibretroMessageManager* messageManager)
 	{
 		_messageManager = messageManager;
@@ -131,7 +167,18 @@ public:
 			_announceSwap = true;
 			_progressDisk = disk;
 			_progressStep = fdsSam->GetInsertFramesElapsed() / SwapProgressInterval;
-			_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), 0, SwapProgressDuration, false);
+			if(!_textOnlyDiskMessages) {
+				_messageManager->DisplayProgressMessage("Inserting " + GetFdsDiskName(disk), 0, SwapProgressDuration, false);
+			} else {
+				//The disk comes out on the next frame
+				FDS* fds = dynamic_cast<FDS*>(_console->GetMapper());
+				_ejectingDisk = fds && fds->IsDiskInserted() ? fds->GetCurrentDisk() : -1;
+				if(_ejectingDisk >= 0) {
+					_messageManager->DisplayTextMessage("Ejecting " + GetFdsDiskName(_ejectingDisk), EjectingSteps * SwapProgressInterval * 1000 / 60);
+				} else {
+					DisplayInsertingText(fdsSam, disk);
+				}
+			}
 		}
 	}
 

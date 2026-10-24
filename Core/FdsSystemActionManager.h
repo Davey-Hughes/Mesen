@@ -144,6 +144,11 @@ public:
 		return ReinsertDiskFrameDelay - _insertDiskDelay;
 	}
 
+	int GetInsertFramesLeft()
+	{
+		return _insertDiskDelay;
+	}
+
 	int GetInsertProgress()
 	{
 		return GetInsertFramesElapsed() * 100 / ReinsertDiskFrameDelay;

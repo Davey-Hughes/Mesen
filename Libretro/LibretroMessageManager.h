@@ -17,6 +17,19 @@ private:
 		return _retroEnv(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &avEnable) && (avEnable & 8);
 	}
 
+	void SetMessageExt(const string &message, retro_message_type type, int8_t progress, unsigned duration)
+	{
+		retro_message_ext msg = {};
+		msg.msg = message.c_str();
+		msg.duration = duration;
+		msg.priority = 1;
+		msg.level = RETRO_LOG_INFO;
+		msg.target = RETRO_MESSAGE_TARGET_OSD;
+		msg.type = type;
+		msg.progress = progress;
+		_retroEnv(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg);
+	}
+
 public:
 	LibretroMessageManager(retro_log_printf_t logCallback, retro_environment_t retroEnv)
 	{
@@ -59,19 +72,29 @@ public:
 
 		if(_messageInterfaceVersion >= 1)
 		{
-			retro_message_ext msg = {};
-			msg.msg = message.c_str();
-			msg.duration = duration;
-			msg.priority = 1;
-			msg.level = RETRO_LOG_INFO;
-			msg.target = RETRO_MESSAGE_TARGET_OSD;
-			msg.type = RETRO_MESSAGE_TYPE_PROGRESS;
-			msg.progress = progress;
-			_retroEnv(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg);
+			SetMessageExt(message, RETRO_MESSAGE_TYPE_PROGRESS, progress, duration);
 		}
 		else if(!progressUpdate)
 		{
 			retro_message msg = { message.c_str(), 120 };
+			_retroEnv(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+		}
+	}
+
+	void DisplayTextMessage(string message, unsigned duration)
+	{
+		if(IsRunAheadCopy())
+		{
+			return;
+		}
+
+		if(_messageInterfaceVersion >= 1)
+		{
+			SetMessageExt(message, RETRO_MESSAGE_TYPE_NOTIFICATION_ALT, 0, duration);
+		}
+		else
+		{
+			retro_message msg = { message.c_str(), duration * 60 / 1000 };
 			_retroEnv(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
 		}
 	}
